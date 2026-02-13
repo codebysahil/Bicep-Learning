@@ -1,0 +1,68 @@
+@description('The name of the environment. This must be dev, test, or prod.')
+@allowed([
+  'dev'
+  'test'
+  'prod'
+])
+param environmentName string = 'dev'
+var keyVaultName = 'kvdemo88'
+@maxLength(24)
+@minLength(5)
+@description('The unique name of the solution. This is used to ensure that resource names are unique.')
+param solutionName string = 'toyhr${uniqueString(resourceGroup().id)}'
+
+@minValue(1)
+@maxValue(10)
+@description('The number of App Service plan instances.')
+param appServicePlanInstanceCount int = 1
+
+@description('The name and tier of the App Service plan SKU.')
+param appServicePlanSku object = {
+  name: 'F1'
+  tier: 'Free'
+}
+@description('The Azure region into which the resources should be deployed.')
+param location string = 'westeurope'
+
+var appServicePlanName = '${environmentName}-${solutionName}-plan'
+var appServiceAppName = '${environmentName}-${solutionName}-app'
+
+
+resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+  name: appServicePlanName
+  location: location
+  sku: {
+    name: appServicePlanSku.name
+    tier: appServicePlanSku.tier
+    capacity: appServicePlanInstanceCount
+  }
+}
+
+resource appServiceApp 'Microsoft.Web/sites@2024-04-01' = {
+  name: appServiceAppName
+  location: location
+  properties: {
+    serverFarmId: appServicePlan.id
+    httpsOnly: true
+  }
+}
+
+
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: keyVaultName
+}
+
+// SQL Server Module - reading credentials from Key Vault
+module sqlServerModule '../modules/sqlServer.bicep' = {
+  name: 'sqlServerDeployment'
+  params: {
+    sqlServerName: 'MSC-SQL-${environmentName}-${solutionName}-sql'
+    sqlDatabaseName: '${environmentName}-database'
+    administratorLogin: keyVault.getSecret('dbuser')
+    administratorLoginPassword: keyVault.getSecret('dbpassword')
+    location: location
+    databaseSku: 'Basic'
+    
+  }
+  
+}
